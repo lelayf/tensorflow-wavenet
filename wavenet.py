@@ -65,25 +65,29 @@ class WaveNet(object):
         return transformed, input_batch + transformed
 
 
-    def _preprocess(self, audio):
+    def encode(self, audio):
         '''Quantizes waveform amplitudes.'''
-        with tf.name_scope('preprocessing'):
+        with tf.name_scope('encode'):
             mu = self.channels - 1
             # Perform mu-law companding transformation (ITU-T, 1988).
             magnitude = tf.log(1 + mu * tf.abs(audio)) / tf.log(1. + mu)
             signal = tf.sign(audio) * magnitude
             # Quantize signal to the specified number of levels
-            quantized = tf.cast((signal + 1) / 2 * mu, tf.int32)
+            quantized = tf.cast((signal + 1) / 2 * mu + 0.5, tf.int32)
 
         return quantized
 
 
     def decode(self, output):
-        mu = self.channels - 1
-        y = tf.cast(output, tf.float32)
-        y = 2 * (y / mu) - 1
-        x = tf.sign(y) * (1 / mu) * ((1 + mu)**abs(y) - 1)
-        return x
+        '''Recovers waveform from quantized values.'''
+        with tf.name_scope('decode'):
+            mu = self.channels - 1
+            # Map values back to [-1, 1]
+            casted = tf.cast(output, tf.float32)
+            y = 2 * (casted / mu) - 1
+            # Perform inverse of mu-law transformation
+            x = tf.sign(y) * (1 / mu) * ((1 + mu)**abs(y) - 1)
+            return x
 
 
     def _create_network(self, input_batch):
@@ -152,7 +156,7 @@ class WaveNet(object):
 
     def loss(self, input_batch, name='wavenet'):
         with tf.variable_scope(name):
-            input_batch = self._preprocess(input_batch)
+            input_batch = self.encode(input_batch)
             encoded = self._one_hot(input_batch)
             raw_output = self._create_network(encoded)
 
